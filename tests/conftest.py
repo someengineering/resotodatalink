@@ -10,10 +10,10 @@ from resotolib.graph import Graph
 from resotolib.types import Json
 from sqlalchemy.engine import create_engine, Engine
 
-from resoto_datalink.sql import SqlDefaultUpdater
-from resoto_datalink.arrow.model import ArrowModel
-from resoto_datalink.arrow.writer import ArrowWriter
-from resoto_datalink.arrow.config import ArrowOutputConfig, FileDestination
+from resotodatalink.sql import SqlDefaultUpdater
+from resotodatalink.arrow.model import ArrowModel
+from resotodatalink.arrow.writer import ArrowWriter
+from resotodatalink.arrow.config import ArrowOutputConfig, FileDestination
 from pathlib import Path
 import shutil
 import uuid

@@ -5,7 +5,7 @@ from resotolib.core.actions import CoreFeedback
 from resotolib.core.model_export import node_to_dict
 from resotolib.graph import Graph
 
-from resoto_datalink.remote_graph import RemoteGraphCollector
+from resotodatalink.remote_graph import RemoteGraphCollector
 
 
 def test_remote_graph_collector(example_collector_graph: Graph, core_feedback: CoreFeedback) -> None:

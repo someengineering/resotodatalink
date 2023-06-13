@@ -1,13 +1,13 @@
 from resotoclient.models import Kind, Model
 from typing import Dict, List, Tuple, Literal
 import pyarrow as pa
-from resoto_datalink.schema_utils import (
+from resotodatalink.schema_utils import (
     base_kinds,
     get_table_name,
     get_link_table_name,
     kind_properties,
 )
-from resoto_datalink.arrow.type_converter import parquet_pyarrow_type, csv_pyarrow_type
+from resotodatalink.arrow.type_converter import parquet_pyarrow_type, csv_pyarrow_type
 from functools import partial
 
 

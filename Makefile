@@ -56,9 +56,9 @@ clean-env: ## remove environment
 	rm -fr venv-pypy
 
 lint: ## static code analysis
-	black --line-length 120 --check resoto_datalink tests
-	flake8 resoto_datalink
-	mypy --python-version 3.9 --strict --install-types --non-interactive resoto_datalink tests
+	black --line-length 120 --check resotodatalink tests
+	flake8 resotodatalink
+	mypy --python-version 3.9 --strict --install-types --non-interactive resotodatalink tests
 
 test: ## run tests quickly with the default Python
 	pytest
@@ -74,10 +74,10 @@ coverage: ## check code coverage quickly with the default Python
 	$(BROWSER) htmlcov/index.html
 
 setup:
-	python3 -m venv venv --prompt "resoto-datalink venv"
+	python3 -m venv venv --prompt "resotodatalink venv"
 	./venv/bin/python3 -m pip install --upgrade pip tox
 	./venv/bin/pip3 install -r requirements-all.txt
-	./venv/bin/pip3 install ".[dev,test]"
+	./venv/bin/pip3 install -e "."
 	echo "\n\n\nUse the following command to activate the venv"
 	echo "source venv/bin/activate"
 

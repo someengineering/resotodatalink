@@ -11,12 +11,12 @@ from resotolib.json import from_json
 from resotolib.types import Json
 from sqlalchemy.engine import Engine
 
-from resoto_datalink.arrow.config import ArrowOutputConfig
-from resoto_datalink.sql import sql_updater
+from resotodatalink.arrow.config import ArrowOutputConfig
+from resotodatalink.sql import sql_updater
 
 try:
-    from resoto_datalink.arrow.model import ArrowModel
-    from resoto_datalink.arrow.writer import ArrowWriter
+    from resotodatalink.arrow.model import ArrowModel
+    from resotodatalink.arrow.writer import ArrowWriter
 except ImportError:
     pass
 

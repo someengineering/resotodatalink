@@ -7,8 +7,8 @@ import pyarrow.parquet as pq
 import pyarrow as pa
 import json
 from pathlib import Path
-from resoto_datalink.arrow.model import ArrowModel
-from resoto_datalink.arrow.config import (
+from resotodatalink.arrow.model import ArrowModel
+from resotodatalink.arrow.config import (
     ArrowOutputConfig,
     FileDestination,
     CloudBucketDestination,
@@ -16,7 +16,7 @@ from resoto_datalink.arrow.config import (
     GCSBucket,
     ArrowDestination,
 )
-from resoto_datalink.schema_utils import insert_node
+from resotodatalink.schema_utils import insert_node
 from resotoclient.models import JsObject
 
 import boto3
@@ -239,7 +239,7 @@ def new_writer(table_name: str, schema: pa.Schema, output_config: ArrowOutputCon
         result_dir = ensure_path(output_config.destination.path)
     else:
         hashed_url = sha(output_config.destination.bucket_name)
-        result_dir = ensure_path(Path(f"/tmp/resoto-datalink-uploads/{hashed_url}"))
+        result_dir = ensure_path(Path(f"/tmp/resotodatalink-uploads/{hashed_url}"))
 
     file_writer_format: Union[Parquet, CSV]
     file_path: Path

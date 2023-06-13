@@ -11,9 +11,9 @@ from sqlalchemy import select
 from sqlalchemy.sql import Values
 from sqlalchemy.sql.dml import ValuesBase
 
-from resoto_datalink.sql import SqlDefaultUpdater, DialectUpdater
+from resotodatalink.sql import SqlDefaultUpdater, DialectUpdater
 
-from resoto_datalink.schema_utils import kind_properties, get_table_name
+from resotodatalink.schema_utils import kind_properties, get_table_name
 
 log = logging.getLogger("resoto.datalink")
 
