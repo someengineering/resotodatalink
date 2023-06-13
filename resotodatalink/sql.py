@@ -24,7 +24,7 @@ from sqlalchemy.engine import Engine, Connection, Dialect
 from sqlalchemy.sql.ddl import DropTable, DropConstraint
 from sqlalchemy.sql.dml import ValuesBase
 
-from resoto_datalink.schema_utils import (
+from resotodatalink.schema_utils import (
     base_kinds,
     temp_prefix,
     carz_access,

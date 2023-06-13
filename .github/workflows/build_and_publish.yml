@@ -1,4 +1,4 @@
-name: Check PR resoto-datalink
+name: Check PR resotodatalink
 on:
   push:
     tags:
@@ -11,8 +11,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  resoto-datalink:
-    name: 'resoto-datalink'
+  resotodatalink:
+    name: 'resotodatalink'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -50,5 +50,5 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
-          password: ${{ secrets.PYPI_RESOTO_DATALINK }}
+          password: ${{ secrets.PYPI_RESOTODATALINK }}
           packages_dir: ./dist/

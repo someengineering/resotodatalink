@@ -1,7 +1,7 @@
 from resotoclient.models import Model
 
-from resoto_datalink.arrow.model import ArrowModel
-from resoto_datalink.arrow.writer import ArrowWriter
+from resotodatalink.arrow.model import ArrowModel
+from resotodatalink.arrow.writer import ArrowWriter
 
 
 def test_create_schema(model: Model) -> None:

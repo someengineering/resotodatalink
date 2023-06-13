@@ -1,5 +1,5 @@
 [project]
-name = "resoto-datalink"
+name = "resotodatalink"
 version = "1.0.0"
 authors = [{name="Some Engineering Inc."}]
 description = "Data Pipelines for Resoto infrastructure data."
@@ -67,7 +67,7 @@ test = [
 
 [project.urls]
 Documentation = "https://resoto.com"
-Source = "https://github.com/someengineering/resoto-datalink"
+Source = "https://github.com/someengineering/resotodatalink"
 
 [build-system]
 requires = ["setuptools>=67.8.0", "wheel>=0.40.0", "build>=0.10.0"]

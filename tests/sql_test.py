@@ -5,7 +5,7 @@ from sqlalchemy import MetaData
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from resoto_datalink.sql import SqlDefaultUpdater
+from resotodatalink.sql import SqlDefaultUpdater
 
 
 def test_create_schema(model: Model, engine: Engine) -> None:
