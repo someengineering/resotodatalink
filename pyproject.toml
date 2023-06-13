@@ -1,0 +1,75 @@
+[project]
+name = "resoto-datalink"
+version = "1.0.0"
+authors = [{name="Some Engineering Inc."}]
+description = "Data Pipelines for Resoto infrastructure data."
+license = {file="LICENSE"}
+requires-python = ">=3.9"
+classifiers = [
+    # Current project status
+    "Development Status :: 4 - Beta",
+    # Audience
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Information Technology",
+    # License information
+    "License :: OSI Approved :: Apache Software License",
+    # Supported python versions
+    "Programming Language :: Python :: 3.9",
+    # Supported OS's
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Unix",
+    # Extra metadata
+    "Environment :: Console",
+    "Natural Language :: English",
+    "Topic :: Security",
+    "Topic :: Utilities",
+]
+readme = {file="README.md", content-type="text/markdown"}
+keywords = ["data source", "data sink", "data synchronization", "data pipeline"]
+
+dependencies = [
+    "networkx",
+    "resotoclient",
+    "resotolib",
+    "rich",
+    "sqlalchemy==1.4.45",
+]
+
+[project.optional-dependencies]
+
+# The different database backends we have tested explicitly
+snowflake = [ "snowflake-sqlalchemy" ]
+mysql = [ "pymysql" ]
+parquet = [ "pyarrow", "boto3", "google-cloud-storage" ]
+postgres = [ "psycopg2-binary" ]
+
+# All dev dependencies
+dev = [ "pip-tools" ]
+
+# All test dependencies
+test = [
+    "black",
+    "coverage",
+    "flake8",
+    "hypothesis",
+    "mypy",
+    "pep8-naming",
+    "posthog",
+    "pylint",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pytest-runner",
+    "tox",
+    "wheel",
+    "resoto-plugin-example-collector"
+]
+
+[project.urls]
+Documentation = "https://resoto.com"
+Source = "https://github.com/someengineering/resoto-datalink"
+
+[build-system]
+requires = ["setuptools>=67.8.0", "wheel>=0.40.0", "build>=0.10.0"]
+build-backend = "setuptools.build_meta"
+
