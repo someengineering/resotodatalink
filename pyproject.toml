@@ -1,6 +1,6 @@
 [project]
 name = "resotodatalink"
-version = "1.0.0"
+version = "1.0.1"
 authors = [{name="Some Engineering Inc."}]
 description = "Data Pipelines for Resoto infrastructure data."
 license = {file="LICENSE"}
@@ -43,6 +43,16 @@ mysql = [ "pymysql" ]
 parquet = [ "pyarrow", "boto3", "google-cloud-storage" ]
 postgres = [ "psycopg2-binary" ]
 
+# All extra dependencies
+extra = [
+    "boto3",
+    "google-cloud-storage",
+    "pymysql",
+    "psycopg2-binary",
+    "pyarrow",
+    "snowflake-sqlalchemy",
+]
+
 # All dev dependencies
 dev = [ "pip-tools" ]
 
@@ -73,3 +83,5 @@ Source = "https://github.com/someengineering/resotodatalink"
 requires = ["setuptools>=67.8.0", "wheel>=0.40.0", "build>=0.10.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools.package-data]
+resotodatalink = ["py.typed"]

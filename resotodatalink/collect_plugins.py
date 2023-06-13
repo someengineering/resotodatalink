@@ -2,12 +2,12 @@ from collections import defaultdict
 from logging import getLogger
 from typing import Dict, List, Tuple, Set
 
+import jsons
 from resotoclient import Kind, Model
 from resotolib.baseplugin import BaseCollectorPlugin
 from resotolib.baseresources import BaseResource, EdgeType
 from resotolib.core.actions import CoreFeedback
 from resotolib.core.model_export import node_to_dict
-from resotolib.json import from_json
 from resotolib.types import Json
 from sqlalchemy.engine import Engine
 
@@ -44,7 +44,8 @@ def collect_to_file(
     feedback.progress_done(collector.cloud, 0, 1)
     collector.collect()
     # read the kinds created from this collector
-    kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
+    # Note: Kind is a dataclass - from_json can only handle attrs
+    kinds = [jsons.load(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
     model = ArrowModel(Model({k.fqn: k for k in kinds}), output_config.format)
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
     ne_current = 0
@@ -101,7 +102,8 @@ def collect_sql(collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFe
             edges_by_kind[(from_node.kind, to_node.kind)].append(edge_node)
 
     # read the kinds created from this collector
-    kinds = [from_json(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
+    # Note: Kind is a dataclass - from_json can only handle attrs
+    kinds = [jsons.load(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
     updater = sql_updater(Model({k.fqn: k for k in kinds}), engine)
     node_edge_count = len(collector.graph.nodes) + len(collector.graph.edges)
     ne_count = 0

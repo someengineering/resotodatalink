@@ -74,6 +74,7 @@ coverage: ## check code coverage quickly with the default Python
 	$(BROWSER) htmlcov/index.html
 
 setup:
+	rm -fr venv
 	python3 -m venv venv --prompt "resotodatalink venv"
 	./venv/bin/python3 -m pip install --upgrade pip tox
 	./venv/bin/pip3 install -r requirements-all.txt
@@ -81,8 +82,18 @@ setup:
 	echo "\n\n\nUse the following command to activate the venv"
 	echo "source venv/bin/activate"
 
+update:
+	rm -fr venv
+	python3 -m venv venv --prompt "resotodatalink venv"
+	./venv/bin/python3 -m pip install --upgrade pip tox
+	./venv/bin/pip3 install -e ".[dev,test,snowflake,mysql,parquet,postgres]"
+	pip-compile -q --no-annotate --resolver=backtracking --upgrade --allow-unsafe --no-header -o requirements.txt --extra=extra
+	pip-compile -q --all-extras --no-annotate --resolver=backtracking --upgrade --allow-unsafe --no-header -o requirements-all.txt
+	echo "\n\n\nUse the following command to activate the venv"
+	echo "source venv/bin/activate"
+
 requirements:
-	pip-compile -q --no-annotate --resolver=backtracking --upgrade --allow-unsafe --no-header -o requirements.txt
+	pip-compile -q --no-annotate --resolver=backtracking --upgrade --allow-unsafe --no-header -o requirements.txt --extra=extra
 	pip-compile -q --all-extras --no-annotate --resolver=backtracking --upgrade --allow-unsafe --no-header -o requirements-all.txt
 
 list-outdated:
