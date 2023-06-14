@@ -97,9 +97,9 @@ python-dateutil==2.8.2
 pytz==2023.3
 pyyaml==6.0
 requests==2.31.0
-resoto-plugin-example-collector==3.5.1
+resoto-plugin-example-collector==3.5.2
 resotoclient==1.4.1
-resotolib==3.5.1
+resotolib==3.5.2
 rich==13.4.2
 rsa==4.9
 s3transfer==0.6.1
