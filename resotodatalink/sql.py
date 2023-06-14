@@ -98,6 +98,11 @@ def sql_kind_to_column_type(kind_name: str, model: Model) -> Any:  # Type[TypeEn
 
 
 class SqlUpdater(ABC):
+    @property
+    @abstractmethod
+    def batch_size(self) -> int:
+        pass
+
     @abstractmethod
     def insert_nodes(self, kind: str, nodes: List[Json]) -> Iterator[ValuesBase]:
         pass
@@ -142,7 +147,11 @@ class SqlDefaultUpdater(SqlUpdater):
         ]
         self.kind_by_id: Dict[str, str] = {}
         self.column_types_fn = kwargs.get("kind_to_column_type", sql_kind_to_column_type)
-        self.insert_batch_size = kwargs.get("insert_batch_size", 5000)
+        self.insert_batch_size: int = int(kwargs.get("insert_batch_size", 5000))
+
+    @property
+    def batch_size(self) -> int:
+        return self.insert_batch_size
 
     def create_schema(self, connection: Connection, edges: List[Tuple[str, str]]) -> MetaData:
         log.info(f"Create schema for {len(self.table_kinds)} kinds and their relationships")
