@@ -1,6 +1,7 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
-from typing import List, Tuple, Set, Optional, AsyncIterator, Union, cast, Dict
+from typing import List, Tuple, Set, Optional, AsyncIterator, Union, cast, Dict, TypeVar, Awaitable
 
 import jsons
 from resotoclient import Kind, Model
@@ -23,6 +24,7 @@ except ImportError:
     ArrowWriter = type(None)  # type: ignore
 
 log = getLogger("resoto.datalink")
+T = TypeVar("T")
 
 
 def collect_to_file(
@@ -74,22 +76,28 @@ async def write_file(
     feedback: Optional[CoreFeedback] = None,
     node_edge_count: Optional[int] = None,
 ) -> None:
-    # create the ddl metadata from the kinds
-    model.create_schema(list(all_edge_kinds))
-    # ingest the data
-    writer = ArrowWriter(model, output_config)
-    try:
-        ne_current = 0
-        async for key, nodes in elements:
-            if isinstance(key, str):  # a list of nodes
-                writer.insert_nodes(key, nodes)
-            else:  # a list of edges
-                writer.insert_edges(key, nodes)
-            ne_current += len(nodes)
-            if feedback and node_edge_count:
-                feedback.progress_done("sync_db", ne_current, node_edge_count)
-    finally:
-        writer.close()
+    async def run_on_thread() -> None:
+        """
+        PyArrow is not async, so we need to run it on a thread, to avoid blocking the event loop.
+        """
+        # create the ddl metadata from the kinds
+        model.create_schema(list(all_edge_kinds))
+        # ingest the data
+        writer = ArrowWriter(model, output_config)
+        try:
+            ne_current = 0
+            async for key, nodes in elements:
+                if isinstance(key, str):  # a list of nodes
+                    writer.insert_nodes(key, nodes)
+                else:  # a list of edges
+                    writer.insert_edges(key, nodes)
+                ne_current += len(nodes)
+                if feedback and node_edge_count:
+                    feedback.progress_done("sync_db", ne_current, node_edge_count)
+        finally:
+            writer.close()
+
+    await __run_on_thread(run_on_thread())
 
 
 def collect_sql(
@@ -163,32 +171,61 @@ async def update_sql(
     :param swap_temp_tables: if True, swap the temp tables with the main tables.
     :param node_edge_count: only used for reporting progress. The total number of nodes and edges.
     """
-    engine = create_engine(engine_config.connection_string)
-    updater = sql_updater(model, engine)
 
-    ne_count = 0
-    schema = f"create temp tables {engine.dialect.name}"
-    syncdb = f"synchronize {engine.dialect.name}"
-    with engine.connect() as conn:
-        with conn.begin():
-            # create the ddl metadata from the kinds
-            if feedback:
-                feedback.progress_done(schema, 0, 1)
-            updater.create_schema(conn, list(all_edge_kinds))
-            if feedback:
-                feedback.progress_done(schema, 1, 1)
-                if node_edge_count is not None:
-                    feedback.progress_done(syncdb, 0, node_edge_count)
-            async for key, nodes in elements:
-                if isinstance(key, str):  # a list of nodes
-                    for insert in updater.insert_nodes(key, nodes):
-                        conn.execute(insert)
-                else:  # a list of edges
-                    for insert in updater.insert_edges(key, nodes):
-                        conn.execute(insert)
-                ne_count += len(nodes)
-                if feedback and node_edge_count is not None:
-                    feedback.progress_done(syncdb, ne_count, node_edge_count)
+    async def run_on_thread() -> None:
+        """
+        IO Operations should not block the main thread.
+        There is an async engine, but it has to be supported by the dialect (not all do).
+        Using a thread pool is also not supported, since a lot of dialects require a single thread.
+        Conclusion: we run the whole update on a single thread.
+        """
+        engine = create_engine(engine_config.connection_string)
+        updater = sql_updater(model, engine)
 
-        if swap_temp_tables:
-            updater.swap_temp_tables(conn)
+        ne_count = 0
+        schema = f"create temp tables {engine.dialect.name}"
+        syncdb = f"synchronize {engine.dialect.name}"
+        with engine.connect() as conn:
+            with conn.begin():
+                # create the ddl metadata from the kinds
+                if feedback:
+                    feedback.progress_done(schema, 0, 1)
+                updater.create_schema(conn, list(all_edge_kinds))
+                if feedback:
+                    feedback.progress_done(schema, 1, 1)
+                    if node_edge_count is not None:
+                        feedback.progress_done(syncdb, 0, node_edge_count)
+                async for key, nodes in elements:
+                    if isinstance(key, str):  # a list of nodes
+                        for insert in updater.insert_nodes(key, nodes):
+                            conn.execute(insert)
+                    else:  # a list of edges
+                        for insert in updater.insert_edges(key, nodes):
+                            conn.execute(insert)
+                    ne_count += len(nodes)
+                    if feedback and node_edge_count is not None:
+                        feedback.progress_done(syncdb, ne_count, node_edge_count)
+
+            if swap_temp_tables:
+                updater.swap_temp_tables(conn)
+
+    await __run_on_thread(run_on_thread())
+
+
+async def __run_on_thread(awaitable: Awaitable[T]) -> T:
+    """
+    Run the async awaitable on a new thread.
+    """
+
+    def run_in_new_loop(lp: asyncio.AbstractEventLoop) -> T:
+        asyncio.set_event_loop(lp)
+        return lp.run_until_complete(awaitable)
+
+    with ThreadPoolExecutor() as executor:
+        loop = asyncio.new_event_loop()
+        try:
+            future = executor.submit(run_in_new_loop, loop)
+            return await asyncio.wrap_future(future)
+        finally:
+            loop.stop()
+            loop.close()
