@@ -3,7 +3,6 @@ import logging
 from typing import Any, List, Iterator
 
 from resotoclient import Model
-from resotoclient.models import Property
 from resotolib.types import Json
 from snowflake.sqlalchemy import ARRAY, OBJECT
 from sqlalchemy import Integer, Float, String, Boolean, column
@@ -11,9 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.sql import Values
 from sqlalchemy.sql.dml import ValuesBase
 
-from resotodatalink.sql import SqlDefaultUpdater, DialectUpdater
-
 from resotodatalink.schema_utils import kind_properties, get_table_name
+from resotodatalink.sql import SqlDefaultUpdater, DialectUpdater
 
 log = logging.getLogger("resoto.datalink")
 
@@ -61,8 +59,7 @@ class SnowflakeUpdater(SqlDefaultUpdater):
         self.column_types_fn = kind_to_snowflake_type
 
     def insert_nodes(self, kind: str, nodes: List[Json]) -> Iterator[ValuesBase]:
-        kp, _ = kind_properties(self.model.kinds[kind], self.model)
-        kind_props = [Property("_id", "string")] + kp
+        kind_props, _ = kind_properties(self.model.kinds[kind], self.model, with_id=True)
         select_array = []
         column_definitions = []
         prop_is_json = {}

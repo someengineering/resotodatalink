@@ -36,7 +36,7 @@ def get_link_table_name(from_kind: str, to_kind: str, with_tmp_prefix: bool = Tr
     return temp_prefix + replaced if with_tmp_prefix else replaced
 
 
-def kind_properties(kind: Kind, model: Model) -> Tuple[List[Property], List[str]]:
+def kind_properties(kind: Kind, model: Model, with_id: bool = False) -> Tuple[List[Property], List[str]]:
     visited = set()
 
     def base_props_not_visited(kd: Kind) -> Tuple[List[Property], List[str]]:
@@ -59,7 +59,8 @@ def kind_properties(kind: Kind, model: Model) -> Tuple[List[Property], List[str]
         return list(properties.values()), successors
 
     prs, scs = base_props_not_visited(kind)
-    return prs + carz, scs
+    id_prop = [Property("_id", "string", True)] if with_id else []
+    return id_prop + prs + carz, scs
 
 
 def prepare_node(node: BaseResource, collector: BaseCollectorPlugin) -> Json:

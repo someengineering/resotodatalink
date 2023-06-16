@@ -9,14 +9,16 @@ from resotolib.core.actions import CoreFeedback
 from sqlalchemy import MetaData, create_engine
 from sqlalchemy.orm import Session
 
+from resotodatalink import EngineConfig
 from resotodatalink.arrow.config import ArrowOutputConfig, FileDestination
 from resotodatalink.collect_plugins import collect_sql, collect_to_file
 
 
 def test_collect_sql(core_feedback: CoreFeedback) -> None:
     with TemporaryDirectory() as tmp:
-        engine = create_engine("sqlite:///" + tmp + "/test.db")
-        collect_sql(ExampleCollectorPlugin(), engine, core_feedback, True)
+        engine_config = EngineConfig("sqlite:///" + tmp + "/test.db")
+        collect_sql(ExampleCollectorPlugin(), engine_config, core_feedback, True)
+        engine = create_engine(engine_config.connection_string)
         # get all tables
         metadata = MetaData()
         metadata.reflect(bind=engine)

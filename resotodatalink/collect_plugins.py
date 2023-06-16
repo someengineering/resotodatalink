@@ -1,6 +1,7 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
-from typing import List, Tuple, Set, Optional, AsyncIterator, Union, cast, Dict, TypeVar
+from typing import List, Tuple, Set, Optional, AsyncIterator, Union, cast, Dict, TypeVar, Awaitable
 
 import jsons
 from resotoclient import Kind, Model
@@ -8,20 +9,22 @@ from resotolib.baseplugin import BaseCollectorPlugin
 from resotolib.baseresources import BaseResource, EdgeType
 from resotolib.core.actions import CoreFeedback
 from resotolib.types import Json
-from sqlalchemy.engine import Engine
+from sqlalchemy import create_engine
 
+from resotodatalink import EngineConfig
 from resotodatalink.arrow.config import ArrowOutputConfig
 from resotodatalink.batch_stream import BatchStream
-from resotodatalink.sql import sql_updater, SqlUpdater
+from resotodatalink.sql import sql_updater
 
 try:
     from resotodatalink.arrow.model import ArrowModel
     from resotodatalink.arrow.writer import ArrowWriter
 except ImportError:
-    pass
-
+    ArrowModel = type(None)  # type: ignore
+    ArrowWriter = type(None)  # type: ignore
 
 log = getLogger("resoto.datalink")
+T = TypeVar("T")
 
 
 def collect_to_file(
@@ -73,26 +76,32 @@ async def write_file(
     feedback: Optional[CoreFeedback] = None,
     node_edge_count: Optional[int] = None,
 ) -> None:
-    # create the ddl metadata from the kinds
-    model.create_schema(list(all_edge_kinds))
-    # ingest the data
-    writer = ArrowWriter(model, output_config)
-    try:
-        ne_current = 0
-        async for key, nodes in elements:
-            if isinstance(key, str):  # a list of nodes
-                writer.insert_nodes(key, nodes)
-            else:  # a list of edges
-                writer.insert_edges(key, nodes)
-            ne_current += len(nodes)
-            if feedback and node_edge_count:
-                feedback.progress_done("sync_db", ne_current, node_edge_count)
-    finally:
-        writer.close()
+    async def run_on_thread() -> None:
+        """
+        PyArrow is not async, so we need to run it on a thread, to avoid blocking the event loop.
+        """
+        # create the ddl metadata from the kinds
+        model.create_schema(list(all_edge_kinds))
+        # ingest the data
+        writer = ArrowWriter(model, output_config)
+        try:
+            ne_current = 0
+            async for key, nodes in elements:
+                if isinstance(key, str):  # a list of nodes
+                    writer.insert_nodes(key, nodes)
+                else:  # a list of edges
+                    writer.insert_edges(key, nodes)
+                ne_current += len(nodes)
+                if feedback and node_edge_count:
+                    feedback.progress_done("sync_db", ne_current, node_edge_count)
+        finally:
+            writer.close()
+
+    await __run_on_thread(run_on_thread())
 
 
 def collect_sql(
-    collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, swap_temp_tables: bool = False
+    collector: BaseCollectorPlugin, engine_config: EngineConfig, feedback: CoreFeedback, swap_temp_tables: bool = False
 ) -> Tuple[str, int, int]:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
@@ -101,7 +110,7 @@ def collect_sql(
     # read the kinds created from this collector
     # Note: Kind is a dataclass - from_json can only handle attrs
     kinds = [jsons.load(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
-    updater = sql_updater(Model({k.fqn: k for k in kinds}), engine)
+    model = Model({k.fqn: k for k in kinds})
 
     # compute the available edge kinds
     edges_by_kind: Set[Tuple[str, str]] = set()
@@ -124,11 +133,11 @@ def collect_sql(
         else:
             raise ValueError(f"Unknown node type {node['type']}")
 
-    stream = BatchStream.from_graph(collector, key_fn, updater.batch_size, len(collector.graph.nodes))
+    stream = BatchStream.from_graph(collector, key_fn, engine_config.batch_size, len(collector.graph.nodes))
     asyncio.run(
         update_sql(
-            engine,
-            updater,
+            engine_config,
+            model,
             stream,
             edges_by_kind,
             swap_temp_tables,
@@ -141,8 +150,8 @@ def collect_sql(
 
 
 async def update_sql(
-    engine: Engine,
-    updater: SqlUpdater,
+    engine_config: EngineConfig,
+    model: Model,
     elements: AsyncIterator[Tuple[Union[str, Tuple[str, str]], List[Json]]],
     all_edge_kinds: Set[Tuple[str, str]],
     swap_temp_tables: bool,
@@ -154,8 +163,8 @@ async def update_sql(
     The elements are
       - grouped by kind of from/to for edges: (instance, volume) -> { type=edge, from=i1, to=v1 ... }
       - grouped by kind for nodes: instance -> { type=node, reported= ... }
-    :param engine: the sql engine to use.
-    :param updater: the sql updater to use.
+    :param engine_config: the configuration for the engine to use
+    :param model: the description of the data model
     :param feedback: the core feedback to use.
     :param elements: the elements to update (see above)
     :param all_edge_kinds: used to create the link table schema.
@@ -163,32 +172,60 @@ async def update_sql(
     :param node_edge_count: only used for reporting progress. The total number of nodes and edges.
     """
 
-    ne_count = 0
-    schema = f"create temp tables {engine.dialect.name}"
-    syncdb = f"synchronize {engine.dialect.name}"
-    with engine.connect() as conn:
-        with conn.begin():
-            # create the ddl metadata from the kinds
-            if feedback:
-                feedback.progress_done(schema, 0, 1)
+    async def run_on_thread() -> None:
+        """
+        IO Operations should not block the main thread.
+        There is an async engine, but it has to be supported by the dialect (not all do).
+        Using a thread pool is also not supported, since a lot of dialects require a single thread.
+        Conclusion: we run the whole update on a single thread.
+        """
+        engine = create_engine(engine_config.connection_string)
+        updater = sql_updater(model, engine)
+
+        ne_count = 0
+        schema = f"create temp tables {engine.dialect.name}"
+        syncdb = f"synchronize {engine.dialect.name}"
+        with engine.connect() as conn:
+            with conn.begin():
+                # create the ddl metadata from the kinds
+                if feedback:
+                    feedback.progress_done(schema, 0, 1)
                 updater.create_schema(conn, list(all_edge_kinds))
-            if feedback:
-                feedback.progress_done(schema, 1, 1)
-                if node_edge_count is not None:
-                    feedback.progress_done(syncdb, 0, node_edge_count)
-            async for key, nodes in elements:
-                if isinstance(key, str):  # a list of nodes
-                    for insert in updater.insert_nodes(key, nodes):
-                        conn.execute(insert)
-                else:  # a list of edges
-                    for insert in updater.insert_edges(key, nodes):
-                        conn.execute(insert)
-                ne_count += len(nodes)
-                if feedback and node_edge_count is not None:
-                    feedback.progress_done(syncdb, ne_count, node_edge_count)
+                if feedback:
+                    feedback.progress_done(schema, 1, 1)
+                    if node_edge_count is not None:
+                        feedback.progress_done(syncdb, 0, node_edge_count)
+                async for key, nodes in elements:
+                    if isinstance(key, str):  # a list of nodes
+                        for insert in updater.insert_nodes(key, nodes):
+                            conn.execute(insert)
+                    else:  # a list of edges
+                        for insert in updater.insert_edges(key, nodes):
+                            conn.execute(insert)
+                    ne_count += len(nodes)
+                    if feedback and node_edge_count is not None:
+                        feedback.progress_done(syncdb, ne_count, node_edge_count)
 
-        if swap_temp_tables:
-            updater.swap_temp_tables(conn)
+            if swap_temp_tables:
+                updater.swap_temp_tables(conn)
+
+    await __run_on_thread(run_on_thread())
 
 
-T = TypeVar("T")
+async def __run_on_thread(awaitable: Awaitable[T]) -> T:
+    """
+    Run the async awaitable on a new thread.
+    """
+
+    def run_in_new_loop(lp: asyncio.AbstractEventLoop) -> T:
+        asyncio.set_event_loop(lp)
+        return lp.run_until_complete(awaitable)
+
+    with ThreadPoolExecutor() as executor:
+        loop = asyncio.new_event_loop()
+        try:
+            future = executor.submit(run_in_new_loop, loop)
+            return await asyncio.wrap_future(future)
+        finally:
+            loop.stop()
+            loop.close()

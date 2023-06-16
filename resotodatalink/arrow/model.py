@@ -31,13 +31,8 @@ class ArrowModel:
         def table_schema(kind: Kind) -> None:
             table_name = get_table_name(kind.fqn, with_tmp_prefix=False)
             if table_name not in self.schemas:
-                properties, _ = kind_properties(kind, self.model)
-                schema = pa.schema(
-                    [
-                        pa.field("_id", pa.string()),
-                        *[pa.field(p.name, self.pyarrow_type(p.kind)) for p in properties],
-                    ]
-                )
+                properties, _ = kind_properties(kind, self.model, with_id=True)
+                schema = pa.schema([pa.field(p.name, self.pyarrow_type(p.kind)) for p in properties])
                 self.schemas[table_name] = schema
 
         def link_table_schema(from_kind: str, to_kind: str) -> None:

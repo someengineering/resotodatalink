@@ -1,9 +1,9 @@
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, date
-from typing import List, Any, Type, Tuple, Dict, Iterator, Optional
+from typing import List, Any, Type, Tuple, Dict, Iterator, Optional, Union
 
-from resotoclient.models import Kind, Model
+from resotoclient.models import Kind, Model, Property
 from resotolib.types import Json
 from resotolib.utils import UTC_Date_Format
 from sqlalchemy import (
@@ -24,6 +24,7 @@ from sqlalchemy.engine import Engine, Connection, Dialect
 from sqlalchemy.sql.ddl import DropTable, DropConstraint
 from sqlalchemy.sql.dml import ValuesBase
 
+from resotodatalink import EngineConfig
 from resotodatalink.schema_utils import (
     base_kinds,
     temp_prefix,
@@ -33,6 +34,7 @@ from resotodatalink.schema_utils import (
     kind_properties,
 )
 from resotolib.json import value_in_path
+from sqlalchemy import create_engine
 
 log = logging.getLogger("resoto.datalink")
 
@@ -116,24 +118,30 @@ class SqlUpdater(ABC):
         pass
 
     @staticmethod
-    def swap_temp_tables(engine: Engine) -> None:
-        with engine.connect() as connection:
-            with connection.begin():
-                metadata = MetaData()
-                metadata.reflect(connection, resolve_fks=False)
+    def swap_temp_tables(db_access: Union[EngineConfig, Connection]) -> None:
+        def swap(connection: Connection) -> None:
+            metadata = MetaData()
+            metadata.reflect(connection, resolve_fks=False)
 
-                def drop_table(tl: Table) -> None:
-                    for cs in tl.foreign_key_constraints:
-                        connection.execute(DropConstraint(cs))
-                    connection.execute(DropTable(tl))
+            def drop_table(tl: Table) -> None:
+                for cs in tl.foreign_key_constraints:
+                    connection.execute(DropConstraint(cs))
+                connection.execute(DropTable(tl))
 
-                for table in metadata.tables.values():
-                    if table.name.startswith(temp_prefix):
-                        prod_table = table.name[len(temp_prefix) :]  # noqa: E203
-                        if prod_table in metadata.tables:
-                            drop_table(metadata.tables[prod_table])
-                        connection.execute(DDL(f"ALTER TABLE {table.name} RENAME TO {prod_table}"))
-                # todo: create foreign key constraints on the final tables
+            for table in metadata.tables.values():
+                if table.name.startswith(temp_prefix):
+                    prod_table = table.name[len(temp_prefix) :]  # noqa: E203
+                    if prod_table in metadata.tables:
+                        drop_table(metadata.tables[prod_table])
+                    connection.execute(DDL(f"ALTER TABLE {table.name} RENAME TO {prod_table}"))
+            # todo: create foreign key constraints on the final tables
+
+        if isinstance(db_access, EngineConfig):
+            engine = create_engine(db_access.connection_string)
+            with engine.begin() as connection:
+                swap(connection)
+        else:
+            swap(db_access)
 
 
 class SqlDefaultUpdater(SqlUpdater):
@@ -159,7 +167,7 @@ class SqlDefaultUpdater(SqlUpdater):
         def table_schema(kind: Kind) -> None:
             table_name = get_table_name(kind.fqn)
             if table_name not in self.metadata.tables:
-                properties, _ = kind_properties(kind, self.model)
+                properties, _ = kind_properties(kind, self.model, with_id=False)
                 Table(
                     get_table_name(kind.fqn),
                     self.metadata,
@@ -206,7 +214,7 @@ class SqlDefaultUpdater(SqlUpdater):
 
         return self.metadata
 
-    def node_to_json(self, node: Json) -> Json:
+    def node_to_json(self, node: Json, known_props: Optional[List[Property]] = None) -> Json:
         if node.get("type") == "node" and "id" in node and "reported" in node:
             reported: Json = node.get("reported", {})
             reported["_id"] = node["id"]
@@ -214,20 +222,23 @@ class SqlDefaultUpdater(SqlUpdater):
             reported["account"] = value_in_path(node, carz_access["account"])
             reported["region"] = value_in_path(node, carz_access["region"])
             reported["zone"] = value_in_path(node, carz_access["zone"])
-            reported.pop("kind", None)
-            return reported
+            # In case of known props, make sure to always return a dict with all known props
+            if known_props is not None:
+                return {p.name: reported.get(p.name) for p in known_props}
+            else:
+                reported.pop("kind", None)
+                return reported
         elif node.get("type") == "edge" and "from" in node and "to" in node:
             return {"from_id": node["from"], "to_id": node["to"]}
         raise ValueError(f"Unknown node: {node}")
 
     def insert_nodes(self, kind: str, nodes: List[Json]) -> Iterator[ValuesBase]:
         # create a defaults dict with all properties set to None
-        kp, _ = kind_properties(self.model.kinds[kind], self.model)
-        defaults = {p.name: None for p in kp}
+        kp, _ = kind_properties(self.model.kinds[kind], self.model, with_id=True)
 
         if (table := self.metadata.tables.get(get_table_name(kind))) is not None:
             for batch in (nodes[i : i + self.insert_batch_size] for i in range(0, len(nodes), self.insert_batch_size)):
-                converted = [defaults | self.node_to_json(node) for node in batch]
+                converted = [self.node_to_json(node, kp) for node in batch]
                 yield table.insert().values(converted)
 
     def insert_edges(self, from_to: Tuple[str, str], nodes: List[Json]) -> Iterator[ValuesBase]:
