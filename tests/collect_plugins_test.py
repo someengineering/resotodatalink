@@ -13,27 +13,27 @@ from resotodatalink.arrow.config import ArrowOutputConfig, FileDestination
 from resotodatalink.collect_plugins import collect_sql, collect_to_file
 
 
-def test_collect(core_feedback: CoreFeedback) -> None:
+def test_collect_sql(core_feedback: CoreFeedback) -> None:
     with TemporaryDirectory() as tmp:
         engine = create_engine("sqlite:///" + tmp + "/test.db")
-        collect_sql(ExampleCollectorPlugin(), engine, core_feedback)
+        collect_sql(ExampleCollectorPlugin(), engine, core_feedback, True)
         # get all tables
         metadata = MetaData()
         metadata.reflect(bind=engine)
         expected_counts = {
-            "tmp_example_account": 1,
-            "tmp_example_custom_resource": 1,
-            "tmp_example_instance": 2,
-            "tmp_example_network": 2,
-            "tmp_example_region": 2,
-            "tmp_example_volume": 2,
-            "tmp_link_example_account_example_region": 2,
-            "tmp_link_example_instance_example_volume": 2,
-            "tmp_link_example_network_example_instance": 2,
-            "tmp_link_example_region_example_custom_resource": 1,
-            "tmp_link_example_region_example_instance": 2,
-            "tmp_link_example_region_example_network": 2,
-            "tmp_link_example_region_example_volume": 2,
+            "example_account": 1,
+            "example_custom_resource": 1,
+            "example_instance": 2,
+            "example_network": 2,
+            "example_region": 2,
+            "example_volume": 2,
+            "link_example_account_example_region": 2,
+            "link_example_instance_example_volume": 2,
+            "link_example_network_example_instance": 2,
+            "link_example_region_example_custom_resource": 1,
+            "link_example_region_example_instance": 2,
+            "link_example_region_example_network": 2,
+            "link_example_region_example_volume": 2,
         }
         assert set(metadata.tables.keys()) == expected_counts.keys()  # check that there are entries in the tables
         with Session(engine) as session:

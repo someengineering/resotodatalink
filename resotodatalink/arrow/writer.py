@@ -1,13 +1,19 @@
-from typing import Dict, List, Any, NamedTuple, Optional, final, Union
-import pyarrow.csv as csv
-from dataclasses import dataclass
 import dataclasses
-from abc import ABC
-import pyarrow.parquet as pq
-import pyarrow as pa
+import hashlib
 import json
+from abc import ABC
+from dataclasses import dataclass
 from pathlib import Path
-from resotodatalink.arrow.model import ArrowModel
+from typing import Dict, List, Any, NamedTuple, Optional, final, Union, Tuple
+
+import boto3
+import pyarrow as pa
+import pyarrow.csv as csv
+import pyarrow.parquet as pq
+from google.cloud import storage
+from resotolib.json import value_in_path
+from resotolib.types import Json
+
 from resotodatalink.arrow.config import (
     ArrowOutputConfig,
     FileDestination,
@@ -16,12 +22,8 @@ from resotodatalink.arrow.config import (
     GCSBucket,
     ArrowDestination,
 )
-from resotodatalink.schema_utils import insert_node
-from resotoclient.models import JsObject
-
-import boto3
-from google.cloud import storage
-import hashlib
+from resotodatalink.arrow.model import ArrowModel
+from resotodatalink.schema_utils import get_table_name, get_link_table_name, carz_access
 
 
 class WriteResult(NamedTuple):
@@ -54,7 +56,6 @@ class FileWriter:
 @dataclass(frozen=True)
 class ArrowBatch:
     table_name: str
-    rows: List[Dict[str, Any]]
     schema: pa.Schema
     writer: FileWriter
     destination: ArrowDestination
@@ -167,27 +168,20 @@ def normalize(npath: NormalizationPath, obj: Any) -> Any:
             raise Exception(f"Unexpected object type {type(obj)}, path: {npath}")
 
 
-def write_batch_to_file(batch: ArrowBatch) -> ArrowBatch:
+def write_batch_to_file(batch: ArrowBatch, rows: List[Json]) -> None:
     to_normalize = collect_normalization_paths(batch.schema)
 
-    for row in batch.rows:
+    for row in rows:
         for path in to_normalize:
             normalize(path, row)
 
-    pa_table = pa.Table.from_pylist(batch.rows, batch.schema)
+    pa_table = pa.Table.from_pylist(rows, batch.schema)
     if isinstance(batch.writer.format, Parquet):
         batch.writer.format.parquet_writer.write_table(pa_table)
     elif isinstance(batch.writer.format, CSV):
         batch.writer.format.csv_writer.write_table(pa_table)
     else:
         raise ValueError(f"Unknown format {batch.writer}")
-    return ArrowBatch(
-        table_name=batch.table_name,
-        rows=[],
-        schema=batch.schema,
-        writer=batch.writer,
-        destination=batch.destination,
-    )
 
 
 def close_writer(batch: ArrowBatch) -> None:
@@ -266,39 +260,50 @@ class ArrowWriter:
         self.batches: Dict[str, ArrowBatch] = {}
         self.output_config: ArrowOutputConfig = output_config
 
-    def insert_value(self, table_name: str, values: Any) -> Optional[WriteResult]:
-        if self.model.schemas.get(table_name):
+    def batch_for(self, table_name: str) -> Optional[ArrowBatch]:
+        if table_name in self.batches:
+            return self.batches[table_name]
+        elif table_name in self.model.schemas:
             schema = self.model.schemas[table_name]
-            if table_name in self.batches:
-                batch = self.batches[table_name]
-            else:
-                batch = ArrowBatch(
-                    table_name,
-                    [],
-                    schema,
-                    new_writer(table_name, schema, self.output_config),
-                    self.output_config.destination,
-                )
-
-            batch.rows.append(values)
+            batch = ArrowBatch(
+                table_name,
+                schema,
+                new_writer(table_name, schema, self.output_config),
+                self.output_config.destination,
+            )
             self.batches[table_name] = batch
+            return batch
+        else:
+            return None
+
+    def insert_nodes(self, kind: str, nodes: List[Json]) -> Optional[WriteResult]:
+        def to_node(node: Json) -> Json:
+            reported: Json = node.get("reported", {})
+            reported["_id"] = node["id"]
+            reported["cloud"] = value_in_path(node, carz_access["cloud"])
+            reported["account"] = value_in_path(node, carz_access["account"])
+            reported["region"] = value_in_path(node, carz_access["region"])
+            reported["zone"] = value_in_path(node, carz_access["zone"])
+            reported.pop("kind")
+            return reported
+
+        table_name = get_table_name(kind, with_tmp_prefix=False)
+        if batch := self.batch_for(table_name):
+            write_batch_to_file(batch, [to_node(node) for node in nodes])
             return WriteResult(table_name)
         return None
 
-    def insert_node(self, node: JsObject) -> None:
-        result = insert_node(
-            node,
-            self.kind_by_id,
-            self.insert_value,
-            with_tmp_prefix=False,
-        )
-        should_write_batch = result and len(self.batches[result.table_name].rows) > self.output_config.batch_size
-        if result and should_write_batch:
-            batch = self.batches[result.table_name]
-            self.batches[result.table_name] = write_batch_to_file(batch)
+    def insert_edges(self, from_to: Tuple[str, str], nodes: List[Json]) -> Optional[WriteResult]:
+        def to_node(node: Json) -> Json:
+            return {"from_id": node["from"], "to_id": node["to"]}
+
+        from_kind, to_kind = from_to
+        table_name = get_link_table_name(from_kind, to_kind, with_tmp_prefix=False)
+        if batch := self.batch_for(table_name):
+            write_batch_to_file(batch, [to_node(node) for node in nodes])
+            return WriteResult(table_name)
+        return None
 
     def close(self) -> None:
         for table_name, batch in self.batches.items():
-            batch = write_batch_to_file(batch)
-            self.batches[table_name] = batch
             close_writer(batch)
