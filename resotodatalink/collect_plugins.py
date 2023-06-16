@@ -1,6 +1,6 @@
 import asyncio
 from logging import getLogger
-from typing import List, Tuple, Set, Optional, AsyncIterator, Union, cast, Dict, TypeVar
+from typing import List, Tuple, Set, Optional, AsyncIterator, Union, cast, Dict
 
 import jsons
 from resotoclient import Kind, Model
@@ -8,18 +8,19 @@ from resotolib.baseplugin import BaseCollectorPlugin
 from resotolib.baseresources import BaseResource, EdgeType
 from resotolib.core.actions import CoreFeedback
 from resotolib.types import Json
-from sqlalchemy.engine import Engine
+from sqlalchemy import create_engine
 
+from resotodatalink import EngineConfig
 from resotodatalink.arrow.config import ArrowOutputConfig
 from resotodatalink.batch_stream import BatchStream
-from resotodatalink.sql import sql_updater, SqlUpdater
+from resotodatalink.sql import sql_updater
 
 try:
     from resotodatalink.arrow.model import ArrowModel
     from resotodatalink.arrow.writer import ArrowWriter
 except ImportError:
-    pass
-
+    ArrowModel = type(None)  # type: ignore
+    ArrowWriter = type(None)  # type: ignore
 
 log = getLogger("resoto.datalink")
 
@@ -92,7 +93,7 @@ async def write_file(
 
 
 def collect_sql(
-    collector: BaseCollectorPlugin, engine: Engine, feedback: CoreFeedback, swap_temp_tables: bool = False
+    collector: BaseCollectorPlugin, engine_config: EngineConfig, feedback: CoreFeedback, swap_temp_tables: bool = False
 ) -> Tuple[str, int, int]:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
@@ -101,7 +102,7 @@ def collect_sql(
     # read the kinds created from this collector
     # Note: Kind is a dataclass - from_json can only handle attrs
     kinds = [jsons.load(m, Kind) for m in collector.graph.export_model(walk_subclasses=False)]
-    updater = sql_updater(Model({k.fqn: k for k in kinds}), engine)
+    model = Model({k.fqn: k for k in kinds})
 
     # compute the available edge kinds
     edges_by_kind: Set[Tuple[str, str]] = set()
@@ -124,11 +125,11 @@ def collect_sql(
         else:
             raise ValueError(f"Unknown node type {node['type']}")
 
-    stream = BatchStream.from_graph(collector, key_fn, updater.batch_size, len(collector.graph.nodes))
+    stream = BatchStream.from_graph(collector, key_fn, engine_config.batch_size, len(collector.graph.nodes))
     asyncio.run(
         update_sql(
-            engine,
-            updater,
+            engine_config,
+            model,
             stream,
             edges_by_kind,
             swap_temp_tables,
@@ -141,8 +142,8 @@ def collect_sql(
 
 
 async def update_sql(
-    engine: Engine,
-    updater: SqlUpdater,
+    engine_config: EngineConfig,
+    model: Model,
     elements: AsyncIterator[Tuple[Union[str, Tuple[str, str]], List[Json]]],
     all_edge_kinds: Set[Tuple[str, str]],
     swap_temp_tables: bool,
@@ -154,14 +155,16 @@ async def update_sql(
     The elements are
       - grouped by kind of from/to for edges: (instance, volume) -> { type=edge, from=i1, to=v1 ... }
       - grouped by kind for nodes: instance -> { type=node, reported= ... }
-    :param engine: the sql engine to use.
-    :param updater: the sql updater to use.
+    :param engine_config: the configuration for the engine to use
+    :param model: the description of the data model
     :param feedback: the core feedback to use.
     :param elements: the elements to update (see above)
     :param all_edge_kinds: used to create the link table schema.
     :param swap_temp_tables: if True, swap the temp tables with the main tables.
     :param node_edge_count: only used for reporting progress. The total number of nodes and edges.
     """
+    engine = create_engine(engine_config.connection_string)
+    updater = sql_updater(model, engine)
 
     ne_count = 0
     schema = f"create temp tables {engine.dialect.name}"
@@ -171,7 +174,7 @@ async def update_sql(
             # create the ddl metadata from the kinds
             if feedback:
                 feedback.progress_done(schema, 0, 1)
-                updater.create_schema(conn, list(all_edge_kinds))
+            updater.create_schema(conn, list(all_edge_kinds))
             if feedback:
                 feedback.progress_done(schema, 1, 1)
                 if node_edge_count is not None:
@@ -189,6 +192,3 @@ async def update_sql(
 
         if swap_temp_tables:
             updater.swap_temp_tables(conn)
-
-
-T = TypeVar("T")

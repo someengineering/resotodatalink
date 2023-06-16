@@ -1,7 +1,7 @@
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime, date
-from typing import List, Any, Type, Tuple, Dict, Iterator, Optional
+from typing import List, Any, Type, Tuple, Dict, Iterator, Optional, Union
 
 from resotoclient.models import Kind, Model
 from resotolib.types import Json
@@ -24,6 +24,7 @@ from sqlalchemy.engine import Engine, Connection, Dialect
 from sqlalchemy.sql.ddl import DropTable, DropConstraint
 from sqlalchemy.sql.dml import ValuesBase
 
+from resotodatalink import EngineConfig
 from resotodatalink.schema_utils import (
     base_kinds,
     temp_prefix,
@@ -33,6 +34,7 @@ from resotodatalink.schema_utils import (
     kind_properties,
 )
 from resotolib.json import value_in_path
+from sqlalchemy import create_engine
 
 log = logging.getLogger("resoto.datalink")
 
@@ -116,24 +118,30 @@ class SqlUpdater(ABC):
         pass
 
     @staticmethod
-    def swap_temp_tables(engine: Engine) -> None:
-        with engine.connect() as connection:
-            with connection.begin():
-                metadata = MetaData()
-                metadata.reflect(connection, resolve_fks=False)
+    def swap_temp_tables(db_access: Union[EngineConfig, Connection]) -> None:
+        def swap(connection: Connection) -> None:
+            metadata = MetaData()
+            metadata.reflect(connection, resolve_fks=False)
 
-                def drop_table(tl: Table) -> None:
-                    for cs in tl.foreign_key_constraints:
-                        connection.execute(DropConstraint(cs))
-                    connection.execute(DropTable(tl))
+            def drop_table(tl: Table) -> None:
+                for cs in tl.foreign_key_constraints:
+                    connection.execute(DropConstraint(cs))
+                connection.execute(DropTable(tl))
 
-                for table in metadata.tables.values():
-                    if table.name.startswith(temp_prefix):
-                        prod_table = table.name[len(temp_prefix) :]  # noqa: E203
-                        if prod_table in metadata.tables:
-                            drop_table(metadata.tables[prod_table])
-                        connection.execute(DDL(f"ALTER TABLE {table.name} RENAME TO {prod_table}"))
-                # todo: create foreign key constraints on the final tables
+            for table in metadata.tables.values():
+                if table.name.startswith(temp_prefix):
+                    prod_table = table.name[len(temp_prefix) :]  # noqa: E203
+                    if prod_table in metadata.tables:
+                        drop_table(metadata.tables[prod_table])
+                    connection.execute(DDL(f"ALTER TABLE {table.name} RENAME TO {prod_table}"))
+            # todo: create foreign key constraints on the final tables
+
+        if isinstance(db_access, EngineConfig):
+            engine = create_engine(db_access.connection_string)
+            with engine.begin() as connection:
+                swap(connection)
+        else:
+            swap(db_access)
 
 
 class SqlDefaultUpdater(SqlUpdater):
