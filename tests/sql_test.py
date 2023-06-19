@@ -40,6 +40,22 @@ def test_create_schema(model: Model, engine: Engine) -> None:
     assert set(info.tables["tmp_link_some_instance_some_volume"].columns.keys()) == {"to_id", "from_id"}
 
 
+def test_swap_temp_tables(model: Model, engine: Engine) -> None:
+    updater: SqlDefaultUpdater = SqlDefaultUpdater(model)
+    with engine.connect() as connection:
+        updater.create_schema(connection, [])
+        # no temp table - swap should not do anything
+        updater.swap_temp_tables(connection, drop_existing_tables=False)
+        metadata = MetaData()
+        metadata.reflect(connection, resolve_fks=False)
+        assert len(metadata.tables.values()) == 3
+        # no temp table - swap should drop all existing tables
+        updater.swap_temp_tables(connection, drop_existing_tables=True)
+        metadata = MetaData()
+        metadata.reflect(connection, resolve_fks=False)
+        assert len(metadata.tables.values()) == 0
+
+
 def test_update(engine_with_schema: Engine, updater: SqlDefaultUpdater) -> None:
     instance = {
         "type": "node",

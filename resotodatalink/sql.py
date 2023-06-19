@@ -118,12 +118,16 @@ class SqlUpdater(ABC):
         pass
 
     @staticmethod
-    def swap_temp_tables(db_access: Union[EngineConfig, Connection]) -> None:
+    def swap_temp_tables(db_access: Union[EngineConfig, Connection], drop_existing_tables: bool = False) -> None:
         def swap(connection: Connection) -> None:
             metadata = MetaData()
             metadata.reflect(connection, resolve_fks=False)
+            dropped_tables = set()
 
             def drop_table(tl: Table) -> None:
+                if tl.name in dropped_tables:
+                    return
+                dropped_tables.add(tl.name)
                 for cs in tl.foreign_key_constraints:
                     connection.execute(DropConstraint(cs))
                 connection.execute(DropTable(tl))
@@ -134,6 +138,8 @@ class SqlUpdater(ABC):
                     if prod_table in metadata.tables:
                         drop_table(metadata.tables[prod_table])
                     connection.execute(DDL(f"ALTER TABLE {table.name} RENAME TO {prod_table}"))
+                elif drop_existing_tables:
+                    drop_table(table)
             # todo: create foreign key constraints on the final tables
 
         if isinstance(db_access, EngineConfig):
