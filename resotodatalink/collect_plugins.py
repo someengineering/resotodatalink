@@ -101,7 +101,11 @@ async def write_file(
 
 
 def collect_sql(
-    collector: BaseCollectorPlugin, engine_config: EngineConfig, feedback: CoreFeedback, swap_temp_tables: bool = False
+    collector: BaseCollectorPlugin,
+    engine_config: EngineConfig,
+    feedback: CoreFeedback,
+    swap_temp_tables: bool = False,
+    drop_existing_tables: bool = False,
 ) -> Tuple[str, int, int]:
     # collect cloud data
     feedback.progress_done(collector.cloud, 0, 1)
@@ -141,6 +145,7 @@ def collect_sql(
             stream,
             edges_by_kind,
             swap_temp_tables,
+            drop_existing_tables,
             feedback.with_context(collector.cloud),
             len(collector.graph.nodes) + len(collector.graph.edges),
         )
@@ -155,6 +160,7 @@ async def update_sql(
     elements: AsyncIterator[Tuple[Union[str, Tuple[str, str]], List[Json]]],
     all_edge_kinds: Set[Tuple[str, str]],
     swap_temp_tables: bool,
+    drop_existing_tables: bool,
     feedback: Optional[CoreFeedback] = None,
     node_edge_count: Optional[int] = None,
 ) -> None:
@@ -169,6 +175,7 @@ async def update_sql(
     :param elements: the elements to update (see above)
     :param all_edge_kinds: used to create the link table schema.
     :param swap_temp_tables: if True, swap the temp tables with the main tables.
+    :param drop_existing_tables: if True, delete all existing tables that are not updated.
     :param node_edge_count: only used for reporting progress. The total number of nodes and edges.
     """
 
@@ -207,7 +214,7 @@ async def update_sql(
                         feedback.progress_done(syncdb, ne_count, node_edge_count)
 
             if swap_temp_tables:
-                updater.swap_temp_tables(conn)
+                updater.swap_temp_tables(conn, drop_existing_tables)
 
     await __run_on_thread(run_on_thread())
 
