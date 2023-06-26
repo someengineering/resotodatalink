@@ -91,7 +91,7 @@ def sql_kind_to_column_type(kind_name: str, model: Model) -> Any:  # Type[TypeEn
         return String
     elif kind_name == "boolean":
         return Boolean
-    elif kind and kind.properties:  # complex kind
+    elif kind and kind.properties is not None:  # complex kind
         return JSON
     elif kind and kind.runtime_kind is not None:  # refined simple type like enum
         return sql_kind_to_column_type(kind.runtime_kind, model)

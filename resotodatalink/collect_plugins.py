@@ -1,7 +1,7 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from logging import getLogger
-from typing import List, Tuple, Set, Optional, AsyncIterator, Union, cast, Dict, TypeVar, Awaitable
+from typing import List, Tuple, Set, Optional, AsyncIterator, Union, cast, Dict, TypeVar, Awaitable, Any
 
 import jsons
 from resotoclient import Kind, Model
@@ -9,7 +9,7 @@ from resotolib.baseplugin import BaseCollectorPlugin
 from resotolib.baseresources import BaseResource, EdgeType
 from resotolib.core.actions import CoreFeedback
 from resotolib.types import Json
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from resotodatalink import EngineConfig
 from resotodatalink.arrow.config import ArrowOutputConfig
@@ -27,7 +27,7 @@ log = getLogger("resoto.datalink")
 T = TypeVar("T")
 
 
-def collect_to_file(
+async def collect_to_file(
     collector: BaseCollectorPlugin, feedback: CoreFeedback, output_config: ArrowOutputConfig
 ) -> Tuple[str, int, int]:
     # collect cloud data
@@ -62,7 +62,7 @@ def collect_to_file(
             raise ValueError(f"Unknown node type {node['type']}")
 
     stream = BatchStream.from_graph(collector, key_fn, output_config.batch_size, len(collector.graph.nodes))
-    asyncio.run(write_file(output_config, model, stream, edges_by_kind, feedback, node_edge_count))
+    await write_file(output_config, model, stream, edges_by_kind, feedback, node_edge_count)
 
     feedback.progress_done(collector.cloud, 1, 1)
     return collector.cloud, len(collector.graph.nodes), len(collector.graph.edges)
@@ -100,7 +100,7 @@ async def write_file(
     await __run_on_thread(run_on_thread())
 
 
-def collect_sql(
+async def collect_sql(
     collector: BaseCollectorPlugin,
     engine_config: EngineConfig,
     feedback: CoreFeedback,
@@ -138,17 +138,15 @@ def collect_sql(
             raise ValueError(f"Unknown node type {node['type']}")
 
     stream = BatchStream.from_graph(collector, key_fn, engine_config.batch_size, len(collector.graph.nodes))
-    asyncio.run(
-        update_sql(
-            engine_config,
-            model,
-            stream,
-            edges_by_kind,
-            swap_temp_tables,
-            drop_existing_tables,
-            feedback.with_context(collector.cloud),
-            len(collector.graph.nodes) + len(collector.graph.edges),
-        )
+    await update_sql(
+        engine_config,
+        model,
+        stream,
+        edges_by_kind,
+        swap_temp_tables,
+        drop_existing_tables,
+        feedback.with_context(collector.cloud),
+        len(collector.graph.nodes) + len(collector.graph.edges),
     )
     feedback.progress_done(collector.cloud, 1, 1)
     return collector.cloud, len(collector.graph.nodes), len(collector.graph.edges)
@@ -217,6 +215,17 @@ async def update_sql(
                 updater.swap_temp_tables(conn, drop_existing_tables)
 
     await __run_on_thread(run_on_thread())
+
+
+async def execute_sql(
+    engine_config: EngineConfig, sql: str, bind_vars: Optional[Dict[str, Any]] = None
+) -> AsyncIterator[Json]:
+    engine = create_engine(engine_config.connection_string)
+    with engine.connect() as conn:
+        with conn.begin():
+            result_set = conn.execute(text(sql), bind_vars)
+            for row in result_set:
+                yield dict(row)
 
 
 async def __run_on_thread(awaitable: Awaitable[T]) -> T:
