@@ -92,6 +92,8 @@ def sql_kind_to_column_type(kind_name: str, model: Model, **kwargs: Any) -> Any:
         if isinstance(str_len := kwargs.get("len"), int):
             if str_len > 1024:
                 return Text
+            elif str_len < 32:
+                return String(32)
             elif str_len >= 1:
                 return String(2 ** (str_len - 1).bit_length())
         # if we come here no or invalid len was provided, default to 255 characters
