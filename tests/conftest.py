@@ -33,7 +33,9 @@ def model() -> Model:
             runtime_kind=None,
             properties=[
                 Property("id", "string"),
-                Property("name", "string"),
+                Property("name", "string", metadata={"len": 34}),
+                Property("alias", "string"),
+                Property("description", "string", metadata={"len": 1500}),
             ],
             bases=[],
             aggregate_root=True,
