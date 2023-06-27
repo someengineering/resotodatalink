@@ -16,7 +16,7 @@ from resotodatalink.sql import SqlDefaultUpdater, DialectUpdater
 log = logging.getLogger("resoto.datalink")
 
 
-def kind_to_snowflake_type(kind_name: str, model: Model) -> Any:  # Type[TypeEngine[Any]]
+def kind_to_snowflake_type(kind_name: str, model: Model, **kwargs: Any) -> Any:  # Type[TypeEngine[Any]]
     """
     Map internal kinds to snowflake types.
     More or less the default mapping, but with some special cases for OBJECT and ARRAY types.

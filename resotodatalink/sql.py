@@ -15,6 +15,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     DDL,
     DateTime,
     Date,
@@ -69,7 +70,7 @@ class DateString(TypeDecorator):  # type: ignore
         return value.strftime("%Y-%m-%d") if value else None
 
 
-def sql_kind_to_column_type(kind_name: str, model: Model) -> Any:  # Type[TypeEngine[Any]]
+def sql_kind_to_column_type(kind_name: str, model: Model, **kwargs: Any) -> Any:  # Type[TypeEngine[Any]]
     kind = model.kinds.get(kind_name)
     if "[]" in kind_name:
         return JSON
@@ -88,7 +89,13 @@ def sql_kind_to_column_type(kind_name: str, model: Model) -> Any:  # Type[TypeEn
     elif kind_name == "date":
         return DateString
     elif kind_name in ("string", "duration"):
-        return String
+        if isinstance(str_len := kwargs.get("len"), int):
+            if str_len > 1024:
+                return Text
+            elif str_len >= 1:
+                return String(2 ** (str_len - 1).bit_length())
+        # if we come here no or invalid len was provided, default to 255 characters
+        return String(255)
     elif kind_name == "boolean":
         return Boolean
     elif kind and kind.properties:  # complex kind
@@ -173,15 +180,10 @@ class SqlDefaultUpdater(SqlUpdater):
         def table_schema(kind: Kind) -> None:
             table_name = get_table_name(kind.fqn)
             if table_name not in self.metadata.tables:
-                properties, _ = kind_properties(kind, self.model, with_id=False)
-                Table(
-                    get_table_name(kind.fqn),
-                    self.metadata,
-                    *[
-                        Column("_id", String, primary_key=True),
-                        *[Column(p.name, self.column_types_fn(p.kind, self.model)) for p in properties],
-                    ],
-                )
+                pr, _ = kind_properties(kind, self.model, with_id=False)
+                columns = [Column(p.name, self.column_types_fn(p.kind, self.model, **(p.metadata or {}))) for p in pr]
+                idc = Column("_id", String(255), primary_key=True)
+                Table(get_table_name(kind.fqn), self.metadata, *[idc, *columns])
 
         def link_table_schema(from_kind: str, to_kind: str) -> None:
             from_table = get_table_name(from_kind)
@@ -194,7 +196,7 @@ class SqlDefaultUpdater(SqlUpdater):
             ):
                 # defining a foreign key constraint on a table that does not exist yet, will fail
                 # defining it on the current tmp table setup is possible, but this will not reset during table rename
-                Table(link_table, self.metadata, Column("from_id", String), Column("to_id", String))
+                Table(link_table, self.metadata, Column("from_id", String(255)), Column("to_id", String(255)))
 
         def link_table_schema_from_successors(kind: Kind) -> None:
             _, successors = kind_properties(kind, self.model)
