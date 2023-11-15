@@ -46,6 +46,7 @@ postgres = [ "psycopg2-binary" ]
 # All extra dependencies
 extra = [
     "boto3",
+    "urllib3 < 2", # boto3 requires urllib3 < 2
     "google-cloud-storage",
     "pymysql",
     "psycopg2-binary",

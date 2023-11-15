@@ -94,7 +94,7 @@ update:
 
 requirements:
 	pip-compile -q --no-annotate --resolver=backtracking --upgrade --allow-unsafe --no-header -o requirements.txt --extra=extra
-	pip-compile -q --all-extras --no-annotate --resolver=backtracking --upgrade --allow-unsafe --no-header -o requirements-all.txt
+	pip-compile -q --no-annotate --resolver=backtracking --upgrade --allow-unsafe --no-header -o requirements-all.txt --all-extras
 
 list-outdated:
 	pip list --outdated
