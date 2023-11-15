@@ -38,8 +38,9 @@ async def test_collect_sql(core_feedback: CoreFeedback) -> None:
             "link_example_region_example_instance": 2,
             "link_example_region_example_network": 2,
             "link_example_region_example_volume": 2,
+            "resource_short_property_access": 0,
         }
-        assert set(metadata.tables.keys()) == expected_counts.keys()  # check that there are entries in the tables
+        assert set(metadata.tables.keys()) == set(expected_counts.keys())  # check that there are entries in the tables
         with Session(engine) as session:
             for table in metadata.tables.values():
                 assert session.query(table).count() == expected_counts[table.name]
