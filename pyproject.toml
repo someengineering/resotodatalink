@@ -54,7 +54,12 @@ extra = [
 ]
 
 # All dev dependencies
-dev = [ "pip-tools" ]
+dev = [
+    "pip-tools",
+    "types_python_dateutil",
+    "types_requests",
+    "types_setuptools",
+]
 
 # All test dependencies
 test = [

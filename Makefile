@@ -58,7 +58,7 @@ clean-env: ## remove environment
 lint: ## static code analysis
 	black --line-length 120 --check resotodatalink tests
 	flake8 resotodatalink
-	mypy --python-version 3.9 --strict --install-types --non-interactive resotodatalink tests
+	mypy --python-version 3.9 --strict resotodatalink tests
 
 test: ## run tests quickly with the default Python
 	pytest

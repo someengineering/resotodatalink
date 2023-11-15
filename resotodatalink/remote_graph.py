@@ -72,7 +72,7 @@ class RemoteGraphCollector(BaseCollectorPlugin):
             for ancestor, clazz in carz.items():
                 path = ["ancestors", ancestor, "reported"]
                 if (cv := value_in_path(jsc, path)) and (cid := cv.get("id")) and (cname := cv.get("name")):
-                    resource = lookup.get(cid, clazz(id=cid, name=cname))  # type: ignore
+                    resource = lookup.get(cid, clazz(id=cid, name=cname))
                     lookup[cid] = resource
                     setattr(rs, f"_{ancestor}", resource)  # xxx is defined by _xxx property
 
